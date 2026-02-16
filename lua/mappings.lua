@@ -1,0 +1,312 @@
+require "nvchad.mappings"
+local map = vim.keymap.set
+
+-- === DIAGNOSTIC UTILS === --
+map("n", "<leader>ld", function()
+  vim.diagnostic.open_float({ border = "rounded", source = "always", scope = "line" })
+end, { desc = "Line Diagnostic (Float)" })
+
+map("n", "<leader>lt", function()
+  local current_config = vim.diagnostic.config()
+  local new_state = not current_config.virtual_text
+  vim.diagnostic.config({ virtual_text = new_state })
+  vim.notify("Diagnostics: " .. (new_state and "ON" or "OFF"))
+end, { desc = "Toggle Diagnostic Text" })
+
+-- === WINDOW HELPERS === --
+local function goto_main_window()
+  local wins = vim.api.nvim_list_wins()
+  for _, w in ipairs(wins) do
+    local buf = vim.api.nvim_win_get_buf(w)
+    local ft = vim.bo[buf].filetype
+    if ft ~= "NvimTree" then vim.api.nvim_set_current_win(w); return end
+  end
+  vim.cmd("vsplit")
+end
+
+
+-- === CENTRALIZED SAVE LOGIC (Final: Clean & Silent) === --
+local function save_and_run(callback)
+  local file = vim.fn.expand("%")
+  
+  -- Case A: Untitled File -> Trigger AppleScript Dialog
+  if file == "" then
+    -- We use 'activate' + standard 'choose file name' to avoid permission errors
+    local cmd = "osascript -e 'activate' -e 'set theFile to choose file name with prompt \"Save File As...\" default name \"untitled\"' -e 'POSIX path of theFile' 2>&1"
+    
+    local result = vim.fn.system(cmd)
+    
+    -- Bring Neovide back to focus immediately
+    os.execute("osascript -e 'tell application \"Neovide\" to activate'")
+    
+    -- Check for errors or cancellation
+    if vim.v.shell_error ~= 0 then
+      if string.find(result, "User canceled") then
+        vim.notify("Save Cancelled", vim.log.levels.INFO)
+      end
+      -- Silent return on error (no debug message)
+      return
+    end
+
+    -- Clean the result
+    local path = result:gsub("[\r\n]", "")
+    if path == "" then return end 
+
+    -- Safe Save
+    local success, err = pcall(function()
+      vim.cmd("saveas " .. vim.fn.fnameescape(path))
+    end)
+
+    if success then
+      -- Save successful, run callback (close/quit) if provided
+      if callback then callback() end
+    else
+      -- Only show error if the actual file write fails (e.g. disk full)
+      vim.notify("Write Error: " .. tostring(err), vim.log.levels.ERROR)
+    end
+
+  -- Case B: Existing File -> Just Save
+  else
+    vim.cmd("w")
+    if vim.fn.mode() == 'i' then vim.cmd("stopinsert") end
+    if callback then callback() end
+  end
+end
+
+
+-- === BEAUTIFUL EXIT LOGIC (Fixed: Single Press 'n') === --
+local function ask_to_save(callback)
+  vim.cmd("stopinsert")
+  local choice = vim.fn.confirm("Save Changes?", "&Yes\n&No\n&Cancel", 1)
+  
+  if choice == 1 then -- YES
+    -- Use the smart save logic (handles untitled files)
+    save_and_run(callback)
+    
+  elseif choice == 2 then -- NO
+    -- FIX: Force "modified" to false so the close command works INSTANTLY
+    vim.bo.modified = false 
+    callback()
+  end
+end
+
+local function smart_close()
+  local buf = vim.api.nvim_get_current_buf()
+  local modified = vim.bo[buf].modified
+  local bufs = vim.t.bufs or vim.api.nvim_list_bufs()
+  
+  local function proceed_close()
+    local listed_bufs = {}
+    for _, b in ipairs(bufs) do
+      if vim.bo[b].buflisted then table.insert(listed_bufs, b) end
+    end
+    if #listed_bufs <= 1 then
+        vim.cmd("qa!") 
+    else
+        require("nvchad.tabufline").close_buffer()
+    end
+  end
+
+  if modified then
+    ask_to_save(proceed_close)
+  else
+    proceed_close()
+  end
+end
+
+local function smart_quit_app()
+  local modified = false
+  for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.bo[buf].modified then modified = true; break end
+  end
+
+  if modified then
+    vim.cmd("stopinsert")
+    local choice = vim.fn.confirm("Quit App?", "&Yes (Save All)\n&No (Discard)\n&Cancel", 1)
+    
+    if choice == 1 then -- YES
+      -- If current file is untitled, save it first, then Quit All
+      if vim.fn.expand("%") == "" then
+        save_and_run(function() vim.cmd("wa"); vim.cmd("qa") end)
+      else
+        vim.cmd("wa")
+        vim.cmd("qa")
+      end
+    elseif choice == 2 then -- NO
+      vim.cmd("qa!") -- Force quit everything
+    end
+  else
+    vim.cmd("qa")
+  end
+end
+
+-- === SMART TERMINAL === --
+local function smart_term_exec(cmd_str)
+  local osascript = [[
+    osascript -e '
+      tell application "Terminal"
+        if not running then
+           activate
+           repeat until (count of windows) > 0
+               delay 0.1
+           end repeat
+           do script "]] .. cmd_str .. [[" in window 1
+        else
+           if (count of windows) is 0 then
+              activate
+              do script "]] .. cmd_str .. [["
+           else
+              activate
+              try
+                 set isBusy to busy of selected tab of front window
+              on error
+                 set isBusy to false
+              end try
+              
+              if isBusy then
+                 do script "]] .. cmd_str .. [["
+              else
+                 do script "]] .. cmd_str .. [[" in front window
+              end if
+           end if
+        end if
+        tell application "System Events" to set frontmost of process "Terminal" to true
+      end tell'
+  ]]
+  os.execute(osascript)
+end
+
+-- === CLIPBOARD & PASTE === --
+map({ "n", "v", "x" }, "<D-c>", '"+y', { desc = "Copy" })
+map("i", "<D-c>", '<Esc>"+yygi', { desc = "Copy Line" })
+map("i", "<D-v>", '<C-r><C-p>+', { desc = "Paste (Smart)" })
+map({ "n", "v", "x" }, "<D-v>", '"+p', { desc = "Paste" })
+map({ "n", "v", "x" }, "<D-x>", '"+d', { desc = "Cut" })
+map("i", "<D-x>", '<Esc>"+ddgi', { desc = "Cut Line" })
+
+-- === FILE OPS === --
+map({ "n", "i", "v" }, "<D-n>", function() goto_main_window(); vim.cmd("enew") end, { desc = "New File" })
+
+-- SMART SAVE (Refactored to use the shared logic)
+map({ "n", "i", "v" }, "<D-s>", function() 
+  save_and_run() 
+end, { desc = "Smart Save" })
+
+map({ "n", "i", "v" }, "<D-o>", function()
+  local cmd = "osascript -e 'tell application \"System Events\"' -e 'activate' -e 'set theFolder to choose folder with prompt \"Select Project\"' -e 'POSIX path of theFolder' -e 'end tell'"
+  local handle = io.popen(cmd); local result = handle:read("*a"); handle:close()
+  os.execute("osascript -e 'tell application \"Neovide\" to activate'")
+  if result and result ~= "" then vim.cmd("cd " .. result:gsub("\n", "")); vim.cmd("NvimTreeFocus") end
+end, { desc = "Open Project" })
+
+map({ "n", "i", "v" }, "<D-O>", function()
+  local cmd = "osascript -e 'tell application \"System Events\"' -e 'activate' -e 'set theFile to choose file with prompt \"Select a File\"' -e 'POSIX path of theFile' -e 'end tell'"
+  local handle = io.popen(cmd); local result = handle:read("*a"); handle:close()
+  os.execute("osascript -e 'tell application \"Neovide\" to activate'")
+  if result and result ~= "" then vim.cmd("e " .. result:gsub("\n", "")) end
+end, { desc = "Open File" })
+
+-- BEAUTIFUL CLOSE/QUIT
+map({ "n", "i", "v" }, "<D-w>", function() smart_close() end, { desc = "Close File" })
+map({ "n", "i", "v" }, "<D-q>", function() smart_quit_app() end, { desc = "Quit App" })
+
+-- === GIT LOGIC === --
+map({ "n", "i", "v" }, "<D-g>", "<cmd>LazyGit<cr>", { desc = "Open Git" })
+
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "lazygit",
+  callback = function()
+    local opts = { buffer = true, silent = true }
+    map("t", "<Esc>", "<C-\\><C-n>:q<cr>", opts) 
+    map("t", "<D-g>", "<C-\\><C-n>:q<cr>", opts)
+    map("n", "q", ":q<cr>", opts)
+  end,
+})
+
+-- === EDITING === --
+map({ "n", "i", "v" }, "<D-z>", "<cmd> u <cr>", { desc = "Undo" })
+map("n", "<D-S-z>", "<C-r>", { desc = "Redo" })
+map("i", "<D-S-z>", "<C-o><C-r>", { desc = "Redo" })
+map("i", "<D-]>", "<C-o>>", { desc = "Indent" })
+map("i", "<D-[>", "<C-o><", { desc = "Outdent" })
+map("n", "<D-]>", ">>", { desc = "Indent" })
+map("n", "<D-[>", "<<", { desc = "Outdent" })
+map("v", "<D-]>", ">gv", { desc = "Indent" })
+map("v", "<D-[>", "<gv", { desc = "Outdent" })
+map("n", "<D-/>", "gcc", { desc = "Comment", remap = true })
+map("v", "<D-/>", "gc", { desc = "Comment", remap = true })
+map("i", "<D-/>", "<Esc>gccgi", { desc = "Comment" })
+map("i", "<S-CR>", "<Esc>A", { desc = "Jump to End" })
+map("n", "<S-CR>", "A", { desc = "Jump to End" })
+map("v", "<S-CR>", "$", { desc = "Jump to End" })
+
+-- === NAVIGATION & SIDEBAR LOGIC === --
+map({ "n", "i", "v" }, "<D-t>", function()
+  vim.cmd("wincmd w")
+  if vim.bo.filetype == "NvimTree" then vim.cmd("stopinsert") end
+end, { desc = "Cycle Windows" })
+
+map({ "n", "i", "v" }, "<D-k>", function() 
+  vim.cmd("stopinsert") 
+  vim.cmd("NvimTreeToggle") 
+end, { desc = "Toggle Sidebar" })
+
+map({ "n", "i", "v" }, "<D-p>", function() goto_main_window(); require("telescope.builtin").find_files() end, { desc = "Find File" })
+map({ "n", "i", "v" }, "<D-F>", function() require("telescope.builtin").live_grep() end, { desc = "Live Grep" })
+map({ "n", "i", "v" }, "<D-f>", function() require("telescope.builtin").current_buffer_fuzzy_find() end, { desc = "Find in File" })
+map("n", "<D-CR>", vim.lsp.buf.definition, { desc = "Go to Definition" })
+-- map({ "n", "i", "v" }, "<D-a>", "<cmd> normal! ggVG <cr>", { desc = "Select All" })
+-- Select All (Fixed for Insert Mode)
+map("n", "<D-a>", "ggVG", { desc = "Select All" })
+map("i", "<D-a>", "<Esc>ggVG", { desc = "Select All" }) -- Explicit <Esc> fixes the mode switch
+map("v", "<D-a>", "<Esc>ggVG", { desc = "Select All" })
+
+-- === SMART RUN COMMANDS === --
+map({ "n", "i", "v" }, "<D-j>", function()
+  local cwd = vim.fn.getcwd()
+  local cmd = "cd " .. vim.fn.shellescape(cwd) .. " && clear"
+  smart_term_exec(cmd)
+end, { desc = "Smart Terminal" })
+
+map({ "n", "i", "v" }, "<D-b>", function()
+  vim.cmd("silent! w")
+  local file = vim.g.last_code_file
+  if not file or file == "" then file = vim.fn.expand("%:p") end
+  local cwd = vim.fn.getcwd()
+  local run_script = "~/.config/nvim/run_code.sh " .. vim.fn.shellescape(file)
+  local cmd = "cd " .. vim.fn.shellescape(cwd) .. " && clear && " .. run_script
+  smart_term_exec(cmd)
+end, { desc = "Smart Run Code" })
+
+map({ "n", "i", "v" }, "<C-`>", function()
+  local file_dir = vim.fn.expand("%:p:h")
+  if file_dir == "" then file_dir = vim.fn.getcwd() end
+  local cmd = "cd " .. vim.fn.shellescape(file_dir) .. " && clear"
+  smart_term_exec(cmd)
+end, { desc = "Terminal at File Dir" })
+
+-- === VS CODE BEHAVIOR & SELECTION DELETE === --
+map("v", "<BS>", '"_d', { desc = "Delete Selection" })
+map("v", "<Del>", '"_d', { desc = "Delete Selection" })
+
+-- ===============================================
+-- ===  NEW: BEAUTIFUL TOGGLETERM INTEGRATION  ===
+-- ===============================================
+map({ "n", "t" }, "<D-\\>", "<cmd>ToggleTerm direction=float<cr>", { desc = "Toggle Terminal" })
+
+local term_id_counter = 1
+map("t", "<D-n>", function()
+  term_id_counter = term_id_counter + 1
+  vim.cmd(term_id_counter .. "ToggleTerm direction=float")
+end, { desc = "New Terminal Instance" })
+
+map("t", "<D-w>", "<cmd>close<cr>", { desc = "Close Terminal" })
+map("t", "<Esc>", "<C-\\><C-n>", { desc = "Exit Terminal Mode" })
+
+map("t", "<D-v>", function()
+  local text = vim.fn.getreg('+')
+  vim.api.nvim_chan_send(vim.bo.channel, text)
+end, { desc = "Paste in Terminal" })
+
+map("t", "<D-s>", "<C-\\><C-n>:w<cr>", { desc = "Smart Save" })
+map("t", "<D-a>", "<C-\\><C-n>ggVG", { desc = "Select All" })
