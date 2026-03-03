@@ -17,6 +17,16 @@ This file documents all explicit keymaps currently defined in this config.
 
 > Note: `require "nvchad.mappings"` also loads NvChad defaults. This README lists your explicit custom/plugin mappings here.
 
+## Ghostty (macOS) Notes
+
+- `Cmd + o` / `Cmd + Shift + o` and `Cmd + s` are configured to restore focus to the current host app after macOS file dialogs:
+  - In Neovide: returns to Neovide
+  - In terminal Neovim: returns to Ghostty
+- `Space + o` / `Space + Shift + o` also return focus to Ghostty.
+- In terminal apps on macOS, some `Cmd` keys may be intercepted by the app/menu before Neovim sees them.
+  - Commonly unreliable: `Cmd + t`, `Cmd + w`, `Cmd + q`, sometimes `Cmd + z`
+- Recommended fallback: use the `Space` equivalents for all critical actions (`Space + s`, `Space + o`, `Space + w`, `Space + q`, etc.).
+
 ---
 
 ## `lua/mappings.lua`

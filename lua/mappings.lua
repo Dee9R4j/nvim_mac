@@ -24,6 +24,11 @@ local function goto_main_window()
   vim.cmd("vsplit")
 end
 
+local function focus_current_host_app()
+  local app = vim.g.neovide and "Neovide" or "Ghostty"
+  os.execute("osascript -e 'tell application \"" .. app .. "\" to activate'")
+end
+
 
 -- === CENTRALIZED SAVE LOGIC (Final: Clean & Silent) === --
 local function save_and_run(callback)
@@ -36,8 +41,7 @@ local function save_and_run(callback)
     
     local result = vim.fn.system(cmd)
     
-    -- Bring Neovide back to focus immediately
-    os.execute("osascript -e 'tell application \"Neovide\" to activate'")
+    focus_current_host_app()
     
     -- Check for errors or cancellation
     if vim.v.shell_error ~= 0 then
@@ -219,20 +223,21 @@ map({ "n", "i", "v" }, "<D-n>", function() goto_main_window(); vim.cmd("enew") e
 
 -- SMART SAVE (Refactored to use the shared logic)
 map({ "n", "i", "v" }, "<D-s>", function() 
-  save_and_run() 
+  save_and_run()
+  focus_current_host_app()
 end, { desc = "Smart Save" })
 
 map({ "n", "i", "v" }, "<D-o>", function()
   local cmd = "osascript -e 'tell application \"System Events\"' -e 'activate' -e 'set theFolder to choose folder with prompt \"Select Project\"' -e 'POSIX path of theFolder' -e 'end tell'"
   local handle = io.popen(cmd); local result = handle:read("*a"); handle:close()
-  os.execute("osascript -e 'tell application \"Neovide\" to activate'")
+  focus_current_host_app()
   if result and result ~= "" then vim.cmd("cd " .. result:gsub("\n", "")); vim.cmd("NvimTreeFocus") end
 end, { desc = "Open Project" })
 
 map({ "n", "i", "v" }, "<D-O>", function()
   local cmd = "osascript -e 'tell application \"System Events\"' -e 'activate' -e 'set theFile to choose file with prompt \"Select a File\"' -e 'POSIX path of theFile' -e 'end tell'"
   local handle = io.popen(cmd); local result = handle:read("*a"); handle:close()
-  os.execute("osascript -e 'tell application \"Neovide\" to activate'")
+  focus_current_host_app()
   if result and result ~= "" then vim.cmd("e " .. result:gsub("\n", "")) end
 end, { desc = "Open File" })
 
@@ -240,14 +245,14 @@ end, { desc = "Open File" })
 map({ "n", "v" }, "<leader>o", function()
   local cmd = "osascript -e 'tell application \"System Events\"' -e 'activate' -e 'set theFolder to choose folder with prompt \"Select Project\"' -e 'POSIX path of theFolder' -e 'end tell'"
   local handle = io.popen(cmd); local result = handle:read("*a"); handle:close()
-  os.execute("osascript -e 'tell application \"Terminal\" to activate'")
+  focus_current_host_app()
   if result and result ~= "" then vim.cmd("cd " .. result:gsub("\n", "")); vim.cmd("NvimTreeFocus") end
 end, { desc = "Open Project (Folder)" })
 
 map({ "n", "v" }, "<leader>O", function()
   local cmd = "osascript -e 'tell application \"System Events\"' -e 'activate' -e 'set theFile to choose file with prompt \"Select a File\"' -e 'POSIX path of theFile' -e 'end tell'"
   local handle = io.popen(cmd); local result = handle:read("*a"); handle:close()
-  os.execute("osascript -e 'tell application \"Terminal\" to activate'")
+  focus_current_host_app()
   if result and result ~= "" then vim.cmd("e " .. result:gsub("\n", "")) end
 end, { desc = "Open File" })
 
@@ -385,7 +390,10 @@ map("t", "<D-a>", "<C-\\><C-n>ggVG", { desc = "Select All" })
 -- ==========================================================
 
 map({ "n", "v" }, "<leader>n", function() goto_main_window(); vim.cmd("enew") end, { desc = "New File" })
-map({ "n", "v" }, "<leader>s", function() save_and_run() end, { desc = "Smart Save" })
+map({ "n", "v" }, "<leader>s", function()
+  save_and_run()
+  focus_current_host_app()
+end, { desc = "Smart Save" })
 map({ "n", "v" }, "<leader>w", function() smart_close() end, { desc = "Close File" })
 map({ "n", "v" }, "<leader>q", function() smart_quit_app() end, { desc = "Quit App" })
 
