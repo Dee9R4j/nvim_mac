@@ -184,6 +184,36 @@ map({ "n", "v", "x" }, "<D-v>", '"+p', { desc = "Paste" })
 map({ "n", "v", "x" }, "<D-x>", '"+d', { desc = "Cut" })
 map("i", "<D-x>", '<Esc>"+ddgi', { desc = "Cut Line" })
 
+local function copy_visual_to_mac_clipboard()
+  vim.cmd('normal! "zy')
+  vim.fn.system("pbcopy", vim.fn.getreg("z"))
+end
+
+local function copy_line_to_mac_clipboard()
+  vim.fn.system("pbcopy", vim.api.nvim_get_current_line())
+end
+
+local function paste_from_mac_clipboard_normal()
+  local text = vim.fn.system("pbpaste")
+  if vim.v.shell_error ~= 0 or text == "" then return end
+  text = text:gsub("\r\n", "\n")
+  vim.fn.setreg("z", text)
+  vim.cmd('normal! "zp')
+end
+
+local function paste_from_mac_clipboard_insert()
+  local text = vim.fn.system("pbpaste")
+  if vim.v.shell_error ~= 0 or text == "" then return end
+  text = text:gsub("\r\n", "\n")
+  vim.api.nvim_put(vim.split(text, "\n", { plain = true }), "c", true, true)
+end
+
+-- Native terminal equivalents for clipboard actions
+map({ "v", "x" }, "<leader>c", copy_visual_to_mac_clipboard, { desc = "Copy" })
+map("n", "<leader>c", copy_line_to_mac_clipboard, { desc = "Copy Line" })
+map({ "n", "v" }, "<leader>v", paste_from_mac_clipboard_normal, { desc = "Paste" })
+map("i", "<leader>v", paste_from_mac_clipboard_insert, { desc = "Paste (Smart)" })
+
 -- === FILE OPS === --
 map({ "n", "i", "v" }, "<D-n>", function() goto_main_window(); vim.cmd("enew") end, { desc = "New File" })
 
@@ -203,6 +233,21 @@ map({ "n", "i", "v" }, "<D-O>", function()
   local cmd = "osascript -e 'tell application \"System Events\"' -e 'activate' -e 'set theFile to choose file with prompt \"Select a File\"' -e 'POSIX path of theFile' -e 'end tell'"
   local handle = io.popen(cmd); local result = handle:read("*a"); handle:close()
   os.execute("osascript -e 'tell application \"Neovide\" to activate'")
+  if result and result ~= "" then vim.cmd("e " .. result:gsub("\n", "")) end
+end, { desc = "Open File" })
+
+-- Native terminal equivalents for GUI openers
+map({ "n", "v" }, "<leader>o", function()
+  local cmd = "osascript -e 'tell application \"System Events\"' -e 'activate' -e 'set theFolder to choose folder with prompt \"Select Project\"' -e 'POSIX path of theFolder' -e 'end tell'"
+  local handle = io.popen(cmd); local result = handle:read("*a"); handle:close()
+  os.execute("osascript -e 'tell application \"Terminal\" to activate'")
+  if result and result ~= "" then vim.cmd("cd " .. result:gsub("\n", "")); vim.cmd("NvimTreeFocus") end
+end, { desc = "Open Project (Folder)" })
+
+map({ "n", "v" }, "<leader>O", function()
+  local cmd = "osascript -e 'tell application \"System Events\"' -e 'activate' -e 'set theFile to choose file with prompt \"Select a File\"' -e 'POSIX path of theFile' -e 'end tell'"
+  local handle = io.popen(cmd); local result = handle:read("*a"); handle:close()
+  os.execute("osascript -e 'tell application \"Terminal\" to activate'")
   if result and result ~= "" then vim.cmd("e " .. result:gsub("\n", "")) end
 end, { desc = "Open File" })
 
@@ -246,15 +291,28 @@ map({ "n", "i", "v" }, "<D-t>", function()
   if vim.bo.filetype == "NvimTree" then vim.cmd("stopinsert") end
 end, { desc = "Cycle Windows" })
 
+map({ "n", "v" }, "<leader>t", function()
+  vim.cmd("wincmd w")
+  if vim.bo.filetype == "NvimTree" then vim.cmd("stopinsert") end
+end, { desc = "Cycle Windows" })
+
 map({ "n", "i", "v" }, "<D-k>", function() 
   vim.cmd("stopinsert") 
   vim.cmd("NvimTreeToggle") 
+end, { desc = "Toggle Sidebar" })
+
+map({ "n", "v" }, "<leader>k", function()
+  vim.cmd("stopinsert")
+  vim.cmd("NvimTreeToggle")
 end, { desc = "Toggle Sidebar" })
 
 map({ "n", "i", "v" }, "<D-p>", function() goto_main_window(); require("telescope.builtin").find_files() end, { desc = "Find File" })
 map({ "n", "i", "v" }, "<D-F>", function() require("telescope.builtin").live_grep() end, { desc = "Live Grep" })
 map({ "n", "i", "v" }, "<D-f>", function() require("telescope.builtin").current_buffer_fuzzy_find() end, { desc = "Find in File" })
 map("n", "<D-CR>", vim.lsp.buf.definition, { desc = "Go to Definition" })
+map({ "n", "v" }, "<leader>p", function() goto_main_window(); require("telescope.builtin").find_files() end, { desc = "Find File" })
+map({ "n", "v" }, "<leader>F", function() require("telescope.builtin").live_grep() end, { desc = "Global Search" })
+map({ "n", "v" }, "<leader>f", function() require("telescope.builtin").current_buffer_fuzzy_find() end, { desc = "Find in File" })
 -- map({ "n", "i", "v" }, "<D-a>", "<cmd> normal! ggVG <cr>", { desc = "Select All" })
 -- Select All (Fixed for Insert Mode)
 map("n", "<D-a>", "ggVG", { desc = "Select All" })
@@ -269,6 +327,16 @@ map({ "n", "i", "v" }, "<D-j>", function()
 end, { desc = "Smart Terminal" })
 
 map({ "n", "i", "v" }, "<D-b>", function()
+  vim.cmd("silent! w")
+  local file = vim.g.last_code_file
+  if not file or file == "" then file = vim.fn.expand("%:p") end
+  local cwd = vim.fn.getcwd()
+  local run_script = "~/.config/nvim/run_code.sh " .. vim.fn.shellescape(file)
+  local cmd = "cd " .. vim.fn.shellescape(cwd) .. " && clear && " .. run_script
+  smart_term_exec(cmd)
+end, { desc = "Smart Run Code" })
+
+map({ "n", "v" }, "<leader>rn", function()
   vim.cmd("silent! w")
   local file = vim.g.last_code_file
   if not file or file == "" then file = vim.fn.expand("%:p") end
@@ -293,6 +361,7 @@ map("v", "<Del>", '"_d', { desc = "Delete Selection" })
 -- ===  NEW: BEAUTIFUL TOGGLETERM INTEGRATION  ===
 -- ===============================================
 map({ "n", "t" }, "<D-\\>", "<cmd>ToggleTerm direction=float<cr>", { desc = "Toggle Terminal" })
+map({ "n", "v" }, "<leader>\\", "<cmd>ToggleTerm direction=float<cr>", { desc = "Toggle Terminal" })
 
 local term_id_counter = 1
 map("t", "<D-n>", function()
@@ -310,3 +379,43 @@ end, { desc = "Paste in Terminal" })
 
 map("t", "<D-s>", "<C-\\><C-n>:w<cr>", { desc = "Smart Save" })
 map("t", "<D-a>", "<C-\\><C-n>ggVG", { desc = "Select All" })
+
+-- ==========================================================
+-- ===  NATIVE TERMINAL (LEADER) FALLBACKS                ===
+-- ==========================================================
+
+map({ "n", "v" }, "<leader>n", function() goto_main_window(); vim.cmd("enew") end, { desc = "New File" })
+map({ "n", "v" }, "<leader>s", function() save_and_run() end, { desc = "Smart Save" })
+map({ "n", "v" }, "<leader>w", function() smart_close() end, { desc = "Close File" })
+map({ "n", "v" }, "<leader>q", function() smart_quit_app() end, { desc = "Quit App" })
+
+map({ "n", "v" }, "<leader>j", function()
+  local cwd = vim.fn.getcwd()
+  local cmd = "cd " .. vim.fn.shellescape(cwd) .. " && clear"
+  smart_term_exec(cmd)
+end, { desc = "Smart Terminal" })
+
+map({ "n", "v" }, "<leader>g", "<cmd>LazyGit<cr>", { desc = "Open Git" })
+
+map({ "n", "v" }, "<leader>z", "<cmd> u <cr>", { desc = "Undo" })
+map({ "n", "v" }, "<leader>Z", "<C-r>", { desc = "Redo" })
+map({ "n", "v" }, "<leader>a", "ggVG", { desc = "Select All" })
+map("v", "<leader>c", copy_visual_to_mac_clipboard, { desc = "Copy" })
+map("n", "<leader>c", copy_line_to_mac_clipboard, { desc = "Copy Line" })
+map({ "n", "v" }, "<leader>v", paste_from_mac_clipboard_normal, { desc = "Paste" })
+map("v", "<leader>x", '+"d', { desc = "Cut" })
+map("n", "<leader>x", '+"dd', { desc = "Cut Line" })
+map("n", "<leader>/", "gcc", { desc = "Comment", remap = true })
+map("v", "<leader>/", "gc", { desc = "Comment", remap = true })
+map("n", "<leader>]", ">>", { desc = "Indent" })
+map("n", "<leader>[", "<<", { desc = "Outdent" })
+map("v", "<leader>]", ">gv", { desc = "Indent" })
+map("v", "<leader>[", "<gv", { desc = "Outdent" })
+
+-- LSP & formatting native terminal shortcuts
+map("n", "<leader>cf", function() require("conform").format({ lsp_fallback = true }) end, { desc = "Format Code" })
+map("n", "gd", vim.lsp.buf.definition, { desc = "Go to Definition" })
+map("n", "gr", vim.lsp.buf.references, { desc = "Go to References" })
+map("n", "gi", vim.lsp.buf.implementation, { desc = "Go to Implementation" })
+map("n", "gcc", "gcc", { desc = "Comment/Uncomment Line", remap = true })
+map("v", "gc", "gc", { desc = "Comment/Uncomment Selection", remap = true })
