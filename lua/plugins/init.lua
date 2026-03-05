@@ -103,6 +103,9 @@ return {
     opts = {
       on_attach = function(client, bufnr)
         require("nvchad.configs.lspconfig").on_attach(client, bufnr)
+        if client.server_capabilities.inlayHintProvider then
+          vim.lsp.inlay_hint.enable(true, { bufnr = bufnr })
+        end
       end,
       settings = {
         tsserver_file_preferences = {
