@@ -280,8 +280,48 @@ return {
     dependencies = { "nvim-lua/plenary.nvim", { "nvim-telescope/telescope-fzf-native.nvim", build = "make" } },
     opts = function()
       local conf = require "nvchad.configs.telescope"
-      conf.defaults.vimgrep_arguments = { "rg", "--color=never", "--no-heading", "--with-filename", "--line-number", "--column", "--smart-case" }
+      conf.defaults.vimgrep_arguments = {
+        "rg",
+        "--color=never",
+        "--no-heading",
+        "--with-filename",
+        "--line-number",
+        "--column",
+        "--smart-case",
+        "--hidden",
+        "-g",
+        "!.git",
+        "-g",
+        "!node_modules",
+        "-g",
+        "!Library",
+      }
       conf.defaults.initial_mode = "insert"
+      conf.pickers = {
+        find_files = {
+          find_command = {
+            "fd",
+            "--type",
+            "f",
+            "--hidden",
+            "--strip-cwd-prefix",
+            "--exclude",
+            ".git",
+            "--exclude",
+            "node_modules",
+            "--exclude",
+            "target",
+            "--exclude",
+            "build",
+            "--exclude",
+            "Library",
+            "--exclude",
+            ".Trash",
+            "--exclude",
+            ".cache",
+          },
+        },
+      }
       return conf
     end,
   },

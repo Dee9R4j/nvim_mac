@@ -33,8 +33,12 @@ elif [ "$EXT" = "cpp" ]; then
         exit 1
     fi
     
-    # -DLOCAL allows you to use #ifdef LOCAL for debug prints that won't run on judges
-    "$GCC_BIN" -std=c++20 -DLOCAL -O2 -Wall -Wextra "$BASENAME" -o "$NAME" && "./$NAME"
+    # -DLOCAL enables local debug blocks; stack_size avoids macOS recursion stack overflows
+    if command -v gtimeout >/dev/null 2>&1; then
+        "$GCC_BIN" -std=c++20 -DLOCAL -O2 -Wall -Wextra -Wl,-stack_size,0x10000000 "$BASENAME" -o "$NAME" && gtimeout 3s "./$NAME"
+    else
+        "$GCC_BIN" -std=c++20 -DLOCAL -O2 -Wall -Wextra -Wl,-stack_size,0x10000000 "$BASENAME" -o "$NAME" && "./$NAME"
+    fi
 
 # === UPDATED C SECTION ===
 elif [ "$EXT" = "c" ]; then
