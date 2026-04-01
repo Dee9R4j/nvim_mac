@@ -140,6 +140,11 @@ return {
       require("nvim-autopairs").setup {}
     end,
   },
+  -- 4.5 COMMENT TOGGLE
+  {
+    "numToStr/Comment.nvim",
+    opts = {},
+  },
   -- 5. EMMET
   {
     "olrtg/nvim-emmet",
