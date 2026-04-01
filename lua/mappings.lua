@@ -1,5 +1,8 @@
 require "nvchad.mappings"
 local map = vim.keymap.set
+local control_center = require("configs.control_center")
+
+control_center.setup()
 
 -- === DIAGNOSTIC UTILS === --
 map("n", "<leader>ld", function()
@@ -328,10 +331,13 @@ map({ "n", "v" }, "<leader>k", function()
 end, { desc = "Toggle Sidebar" })
 
 map({ "n", "i", "v" }, "<D-p>", function() goto_main_window(); require("telescope.builtin").find_files() end, { desc = "Find File" })
+map({ "n", "i", "v" }, "<D-S-p>", function() control_center.open() end, { desc = "Control Center" })
+map({ "n", "i", "v" }, "<D-P>", function() control_center.open() end, { desc = "Control Center" })
 map({ "n", "i", "v" }, "<D-F>", function() require("telescope.builtin").live_grep() end, { desc = "Live Grep" })
 map({ "n", "i", "v" }, "<D-f>", function() require("telescope.builtin").current_buffer_fuzzy_find() end, { desc = "Find in File" })
 map("n", "<D-CR>", vim.lsp.buf.definition, { desc = "Go to Definition" })
 map({ "n", "v" }, "<leader>p", function() goto_main_window(); require("telescope.builtin").find_files() end, { desc = "Find File" })
+map({ "n", "v" }, "<leader>P", function() control_center.open() end, { desc = "Control Center" })
 map({ "n", "v" }, "<leader>F", function() require("telescope.builtin").live_grep() end, { desc = "Global Search" })
 map({ "n", "v" }, "<leader>f", function() require("telescope.builtin").current_buffer_fuzzy_find() end, { desc = "Find in File" })
 -- map({ "n", "i", "v" }, "<D-a>", "<cmd> normal! ggVG <cr>", { desc = "Select All" })

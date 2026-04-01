@@ -164,7 +164,7 @@ return {
           max_width = 30,
           min_height = 3,
           border = "rounded",
-          mappings = { n = { ["q"] = "Close", ["<Esc>"] = "Close" } },
+          mappings = { ["q"] = "Close", ["<Esc>"] = "Close", ["<CR>"] = "Confirm" },
         },
       },
       input = {

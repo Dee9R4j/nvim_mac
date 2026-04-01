@@ -83,9 +83,25 @@ This file documents all explicit keymaps currently defined in this config.
 - `Cycle Windows` — Cmd: `[n,i,v] Cmd + t` | Space: `[n,v] Space + t`
 - `Toggle Sidebar` — Cmd: `[n,i,v] Cmd + k` | Space: `[n,v] Space + k`
 - `Find File` — Cmd: `[n,i,v] Cmd + p` | Space: `[n,v] Space + p`
+- `Control Center` — Cmd: `[n,i,v] Cmd + Shift + p` | Space: `[n,v] Space + Shift + p`
 - `Global Search (Live Grep)` — Cmd: `[n,i,v] Cmd + Shift + f` | Space: `[n,v] Space + Shift + f`
 - `Find in File` — Cmd: `[n,i,v] Cmd + f` | Space: `[n,v] Space + f`
 - `[n] Cmd + Enter` — Go to Definition
+
+### Control Center (GUI-style menu)
+
+- Open with `Cmd + Shift + p` (or `Space + Shift + p`, or `:ControlCenter`)
+- Includes:
+  - Appearance: persistent theme picker, theme toggle, font family picker, text size up/down/reset, Neovide opacity
+  - IDE Preferences: toggle relative numbers, wrap, spell check, diagnostics text, inlay hints, tab size, tabs/spaces
+  - Language and Code: code actions, rename symbol, definition/references, format file
+  - Project and Workspace: file explorer, project search, problems panel, terminal, git UI
+  - Tools and Package Managers:
+    - Plugin actions: install/remove managed plugins from GUI
+    - Mason actions: install/uninstall LSP/formatter/debug tools from GUI
+    - Plus `Mason`, `TSInstallInfo`, `LspInfo`, `checkhealth`
+  - Navigation and Search: command palette (`Telescope commands`), find files, live grep, buffers, keymaps
+- Persistent GUI changes are saved automatically (no manual script edits required for these settings)
 
 ### Select All
 
