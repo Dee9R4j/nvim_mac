@@ -27,9 +27,49 @@ local function goto_main_window()
   vim.cmd("vsplit")
 end
 
+local function trim(str)
+  return (str:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function run_osascript(lines)
+  local cmd = { "osascript" }
+  for _, line in ipairs(lines) do
+    table.insert(cmd, "-e")
+    table.insert(cmd, line)
+  end
+
+  local output = vim.fn.system(cmd)
+  return output, vim.v.shell_error
+end
+
+local function applescript_quote(str)
+  return str:gsub("\\", "\\\\"):gsub('"', '\\"')
+end
+
 local function focus_current_host_app()
   local app = vim.g.neovide and "Neovide" or "Ghostty"
-  os.execute("osascript -e 'tell application \"" .. app .. "\" to activate'")
+  run_osascript({ string.format('tell application "%s" to activate', app) })
+end
+
+local function choose_path(kind, prompt)
+  local item = (kind == "folder") and "theFolder" or "theFile"
+  local chooser = (kind == "folder") and "choose folder" or "choose file"
+  local safe_prompt = applescript_quote(prompt)
+
+  local result, code = run_osascript({
+    'tell application "System Events"',
+    "activate",
+    string.format('set %s to %s with prompt "%s"', item, chooser, safe_prompt),
+    string.format("POSIX path of %s", item),
+    "end tell",
+  })
+
+  focus_current_host_app()
+  if code ~= 0 then return nil end
+
+  local path = trim(result)
+  if path == "" then return nil end
+  return path
 end
 
 
@@ -39,16 +79,18 @@ local function save_and_run(callback)
   
   -- Case A: Untitled File -> Trigger AppleScript Dialog
   if file == "" then
-    -- We use 'activate' + standard 'choose file name' to avoid permission errors
-    local cmd = "osascript -e 'activate' -e 'set theFile to choose file name with prompt \"Save File As...\" default name \"untitled\"' -e 'POSIX path of theFile' 2>&1"
-    
-    local result = vim.fn.system(cmd)
+    -- We use choose file name to avoid permission issues on sandboxed macOS prompts.
+    local result, code = run_osascript({
+      "activate",
+      'set theFile to choose file name with prompt "Save File As..." default name "untitled"',
+      "POSIX path of theFile",
+    })
     
     focus_current_host_app()
     
     -- Check for errors or cancellation
-    if vim.v.shell_error ~= 0 then
-      if string.find(result, "User canceled") then
+    if code ~= 0 then
+      if string.find(result, "User canceled", 1, true) then
         vim.notify("Save Cancelled", vim.log.levels.INFO)
       end
       -- Silent return on error (no debug message)
@@ -56,7 +98,7 @@ local function save_and_run(callback)
     end
 
     -- Clean the result
-    local path = result:gsub("[\r\n]", "")
+    local path = trim(result)
     if path == "" then return end 
 
     -- Safe Save
@@ -149,6 +191,7 @@ end
 
 -- === SMART TERMINAL === --
 local function smart_term_exec(cmd_str)
+  local escaped = applescript_quote(cmd_str)
   local osascript = [[
     osascript -e '
       tell application "Terminal"
@@ -157,11 +200,11 @@ local function smart_term_exec(cmd_str)
            repeat until (count of windows) > 0
                delay 0.1
            end repeat
-           do script "]] .. cmd_str .. [[" in window 1
+        do script "]] .. escaped .. [[" in window 1
         else
            if (count of windows) is 0 then
               activate
-              do script "]] .. cmd_str .. [["
+          do script "]] .. escaped .. [["
            else
               activate
               try
@@ -171,9 +214,9 @@ local function smart_term_exec(cmd_str)
               end try
               
               if isBusy then
-                 do script "]] .. cmd_str .. [["
+            do script "]] .. escaped .. [["
               else
-                 do script "]] .. cmd_str .. [[" in front window
+            do script "]] .. escaped .. [[" in front window
               end if
            end if
         end if
@@ -231,32 +274,30 @@ map({ "n", "i", "v" }, "<D-s>", function()
 end, { desc = "Smart Save" })
 
 map({ "n", "i", "v" }, "<D-o>", function()
-  local cmd = "osascript -e 'tell application \"System Events\"' -e 'activate' -e 'set theFolder to choose folder with prompt \"Select Project\"' -e 'POSIX path of theFolder' -e 'end tell'"
-  local handle = io.popen(cmd); local result = handle:read("*a"); handle:close()
-  focus_current_host_app()
-  if result and result ~= "" then vim.cmd("cd " .. result:gsub("\n", "")); vim.cmd("NvimTreeFocus") end
+  local folder = choose_path("folder", "Select Project")
+  if not folder then return end
+  vim.cmd("cd " .. vim.fn.fnameescape(folder))
+  vim.cmd("NvimTreeFocus")
 end, { desc = "Open Project" })
 
 map({ "n", "i", "v" }, "<D-O>", function()
-  local cmd = "osascript -e 'tell application \"System Events\"' -e 'activate' -e 'set theFile to choose file with prompt \"Select a File\"' -e 'POSIX path of theFile' -e 'end tell'"
-  local handle = io.popen(cmd); local result = handle:read("*a"); handle:close()
-  focus_current_host_app()
-  if result and result ~= "" then vim.cmd("e " .. result:gsub("\n", "")) end
+  local file_path = choose_path("file", "Select a File")
+  if not file_path then return end
+  vim.cmd("e " .. vim.fn.fnameescape(file_path))
 end, { desc = "Open File" })
 
 -- Native terminal equivalents for GUI openers
 map({ "n", "v" }, "<leader>o", function()
-  local cmd = "osascript -e 'tell application \"System Events\"' -e 'activate' -e 'set theFolder to choose folder with prompt \"Select Project\"' -e 'POSIX path of theFolder' -e 'end tell'"
-  local handle = io.popen(cmd); local result = handle:read("*a"); handle:close()
-  focus_current_host_app()
-  if result and result ~= "" then vim.cmd("cd " .. result:gsub("\n", "")); vim.cmd("NvimTreeFocus") end
+  local folder = choose_path("folder", "Select Project")
+  if not folder then return end
+  vim.cmd("cd " .. vim.fn.fnameescape(folder))
+  vim.cmd("NvimTreeFocus")
 end, { desc = "Open Project (Folder)" })
 
 map({ "n", "v" }, "<leader>O", function()
-  local cmd = "osascript -e 'tell application \"System Events\"' -e 'activate' -e 'set theFile to choose file with prompt \"Select a File\"' -e 'POSIX path of theFile' -e 'end tell'"
-  local handle = io.popen(cmd); local result = handle:read("*a"); handle:close()
-  focus_current_host_app()
-  if result and result ~= "" then vim.cmd("e " .. result:gsub("\n", "")) end
+  local file_path = choose_path("file", "Select a File")
+  if not file_path then return end
+  vim.cmd("e " .. vim.fn.fnameescape(file_path))
 end, { desc = "Open File" })
 
 -- BEAUTIFUL CLOSE/QUIT

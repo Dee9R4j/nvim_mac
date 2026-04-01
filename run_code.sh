@@ -1,8 +1,70 @@
 #!/bin/bash
 FILE="$1"
 
+find_latest_versioned_binary() {
+    local pattern="$1"
+    ls /opt/homebrew/bin/${pattern} /usr/local/bin/${pattern} 2>/dev/null | sort -V | tail -n 1
+}
+
+resolve_cpp_compiler() {
+    local detected
+    detected="$(find_latest_versioned_binary 'g++-*')"
+    if [[ -n "$detected" ]]; then
+        echo "$detected"
+        return 0
+    fi
+
+    if command -v g++ >/dev/null 2>&1; then
+        command -v g++
+        return 0
+    fi
+
+    if command -v clang++ >/dev/null 2>&1; then
+        command -v clang++
+        return 0
+    fi
+
+    return 1
+}
+
+resolve_c_compiler() {
+    local detected
+    detected="$(find_latest_versioned_binary 'gcc-*')"
+    if [[ -n "$detected" ]]; then
+        echo "$detected"
+        return 0
+    fi
+
+    if command -v gcc >/dev/null 2>&1; then
+        command -v gcc
+        return 0
+    fi
+
+    if command -v cc >/dev/null 2>&1; then
+        command -v cc
+        return 0
+    fi
+
+    return 1
+}
+
+resolve_cargo_package_name() {
+    local manifest
+    manifest="$(cargo locate-project --message-format plain 2>/dev/null)"
+    if [[ -z "$manifest" || ! -f "$manifest" ]]; then
+        return 1
+    fi
+
+    sed -nE 's/^name[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' "$manifest" | head -n 1
+}
+
 if [[ "$FILE" == term://* ]] || [[ -z "$FILE" ]]; then
     echo "Error: No code file detected. Please open a file first."
+    exit 1
+fi
+
+if [[ ! -f "$FILE" ]]; then
+    echo "Error: File does not exist: $FILE"
     exit 1
 fi
 
@@ -14,8 +76,12 @@ EXT="${BASENAME##*.}"
 if [ "$EXT" = "rs" ]; then
     if cargo locate-project >/dev/null 2>&1; then
         if [ "$BASENAME" = "main.rs" ]; then
-            PKG_NAME=$(grep '^name' Cargo.toml 2>/dev/null || grep '^name' ../Cargo.toml 2>/dev/null | head -n 1 | cut -d '"' -f 2)
-            cargo run -q --bin "$PKG_NAME"
+            PKG_NAME=$(resolve_cargo_package_name)
+            if [ -n "$PKG_NAME" ]; then
+                cargo run -q --bin "$PKG_NAME"
+            else
+                cargo run -q
+            fi
         else
             cargo run -q --bin "$NAME"
         fi
@@ -24,12 +90,10 @@ if [ "$EXT" = "rs" ]; then
     fi
 
 elif [ "$EXT" = "cpp" ]; then
-    # Detect Homebrew GCC version (usually g++-15, g++-14 or g++-13)
-    # We search for the newest version installed via Brew
-    GCC_BIN=$(ls /opt/homebrew/bin/g++-* | sort -V | tail -n 1)
+    GCC_BIN=$(resolve_cpp_compiler)
 
     if [ -z "$GCC_BIN" ]; then
-        echo "Error: GCC not found. Run 'brew install gcc'"
+        echo "Error: No C++ compiler found. Install gcc/clang or configure PATH."
         exit 1
     fi
     
@@ -42,8 +106,11 @@ elif [ "$EXT" = "cpp" ]; then
 
 # === UPDATED C SECTION ===
 elif [ "$EXT" = "c" ]; then
-    # Use GCC for C files too
-    GCC_C_BIN=$(ls /opt/homebrew/bin/gcc-* | sort -V | tail -n 1)
+    GCC_C_BIN=$(resolve_c_compiler)
+    if [ -z "$GCC_C_BIN" ]; then
+        echo "Error: No C compiler found. Install gcc/clang or configure PATH."
+        exit 1
+    fi
     "$GCC_C_BIN" "$BASENAME" -o "$NAME" && "./$NAME"
 
 elif [ "$EXT" = "py" ]; then
@@ -53,7 +120,12 @@ elif [ "$EXT" = "js" ]; then
     node "$BASENAME"
 
 elif [ "$EXT" = "ts" ]; then
-    ts-node "$BASENAME"
+    if command -v ts-node >/dev/null 2>&1; then
+        ts-node "$BASENAME"
+    else
+        echo "Error: ts-node is not installed. Install it globally or in your project."
+        exit 1
+    fi
 
 elif [ "$EXT" = "java" ]; then
     javac "$BASENAME" && java "$NAME"

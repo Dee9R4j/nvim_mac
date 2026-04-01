@@ -2,6 +2,17 @@
 
 This file documents all explicit keymaps currently defined in this config.
 
+## Engineering Docs
+
+- Architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- System design: [docs/SYSTEM-DESIGN.md](docs/SYSTEM-DESIGN.md)
+- Security: [docs/SECURITY.md](docs/SECURITY.md)
+- Error handling: [docs/ERROR-HANDLING.md](docs/ERROR-HANDLING.md)
+- Commenting standard: [docs/COMMENTING-STANDARD.md](docs/COMMENTING-STANDARD.md)
+- Contributing workflow: [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)
+- CLI usage: [docs/CLI-USAGE.md](docs/CLI-USAGE.md)
+- Exit codes: [docs/EXIT-CODES.md](docs/EXIT-CODES.md)
+
 ## Notation
 
 - `Cmd` = macOS Command key

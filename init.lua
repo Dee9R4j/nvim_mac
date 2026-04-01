@@ -9,8 +9,10 @@ end
 vim.g.base46_cache = vim.fn.stdpath "data" .. "/nvchad/base46/"
 vim.g.mapleader = " "
 
+local uv = vim.uv or vim.loop
+
 local lazypath = vim.fn.stdpath "data" .. "/lazy/lazy.nvim"
-if not vim.loop.fs_stat(lazypath) then
+if not uv.fs_stat(lazypath) then
   local repo = "https://github.com/folke/lazy.nvim.git"
   vim.fn.system { "git", "clone", "--filter=blob:none", repo, "--branch=stable", lazypath }
 end
@@ -24,8 +26,20 @@ require("lazy").setup({
   { import = "plugins" },
 }, lazy_config)
 
-dofile(vim.g.base46_cache .. "defaults")
-dofile(vim.g.base46_cache .. "statusline")
+local function safe_dofile(path)
+  if not uv.fs_stat(path) then return false end
+
+  local ok, err = pcall(dofile, path)
+  if not ok then
+    vim.notify("Failed loading cache file: " .. path .. "\n" .. tostring(err), vim.log.levels.WARN)
+    return false
+  end
+
+  return true
+end
+
+safe_dofile(vim.g.base46_cache .. "defaults")
+safe_dofile(vim.g.base46_cache .. "statusline")
 
 require "options"
 require "nvchad.autocmds"
