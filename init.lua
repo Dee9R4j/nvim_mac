@@ -60,28 +60,68 @@ local external_extensions = {
   "svg", "icns", "ico" 
 }
 
+local external_extension_set = {}
+for _, ext in ipairs(external_extensions) do
+  external_extension_set[ext] = true
+end
+
+local function restore_non_external_buffer(target_win, opened_buf)
+  if not vim.api.nvim_win_is_valid(target_win) then return end
+
+  local function is_usable(buf)
+    if buf == opened_buf or not vim.api.nvim_buf_is_valid(buf) then return false end
+    if vim.bo[buf].buftype ~= "" then return false end
+    local buf_name = vim.api.nvim_buf_get_name(buf)
+    if buf_name == "" then return true end
+    local buf_ext = vim.fn.fnamemodify(buf_name, ":e"):lower()
+    return not external_extension_set[buf_ext]
+  end
+
+  local alternate = vim.fn.bufnr("#")
+  if is_usable(alternate) then
+    vim.api.nvim_win_set_buf(target_win, alternate)
+    return
+  end
+
+  for _, info in ipairs(vim.fn.getbufinfo({ buflisted = 1 })) do
+    if is_usable(info.bufnr) then
+      vim.api.nvim_win_set_buf(target_win, info.bufnr)
+      return
+    end
+  end
+
+  vim.api.nvim_win_call(target_win, function() vim.cmd("enew") end)
+end
+
 vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
   pattern = "*",
   callback = function()
     local buf = vim.api.nvim_get_current_buf()
+    local win = vim.api.nvim_get_current_win()
     local file_path = vim.api.nvim_buf_get_name(buf)
+    local bt = vim.bo[buf].buftype
     
     -- Skip execution if there is no file name (e.g. new scratch buffer)
     if file_path == "" then return end
+    if bt ~= "" then return end
 
     -- Get the file extension
     local ext = vim.fn.fnamemodify(file_path, ":e"):lower()
     
     -- Check if the extension is in our blocklist
-    if vim.tbl_contains(external_extensions, ext) then
+    if external_extension_set[ext] then
       -- 1. Open the file in the default macOS app (asynchronously)
       vim.fn.jobstart({ "open", file_path }, { detach = true })
       
-      -- 2. Delete the buffer immediately so it doesn't clutter Neovim
-      -- We schedule it to ensure the autocommand finishes first
+      -- 2. Restore a normal editing buffer so window proportions stay stable.
+      -- We schedule to let the current file-open flow complete first.
       vim.schedule(function()
+        if vim.api.nvim_win_is_valid(win) then
+          restore_non_external_buffer(win, buf)
+        end
+
         if vim.api.nvim_buf_is_valid(buf) then
-          vim.api.nvim_buf_delete(buf, { force = true })
+          pcall(vim.api.nvim_buf_delete, buf, { force = true })
         end
       end)
       
